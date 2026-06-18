@@ -18,3 +18,4 @@ NRIAgilitySDK.h
 bin
 bin-int
 *.make
+*.vcxproj*
