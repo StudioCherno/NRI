@@ -38,7 +38,9 @@ local function NRICommonSettings()
 
 	filter "system:linux"
 		defines {
-			"NRI_ENABLE_XLIB_SUPPORT=1"
+			"NRI_ENABLE_XLIB_SUPPORT=1",
+			"VK_USE_PLATFORM_XLIB_KHR",
+			"VK_USE_PLATFORM_WAYLAND_KHR",
 		}
 	filter {}
 
