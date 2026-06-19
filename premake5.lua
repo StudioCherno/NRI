@@ -66,6 +66,22 @@ local function NRICommonSettings()
 	filter "toolset:gcc or toolset:clang"
 		buildoptions { "-w" } -- Suppress all warnings for vendor code
 	filter {}
+
+	-- Match the engine's runtime library per config so the static lib links
+	-- into Debug and Release targets without an _ITERATOR_DEBUG_LEVEL mismatch
+	filter "configurations:Debug"
+		runtime "Debug"
+		symbols "on"
+
+	filter "configurations:Release"
+		runtime "Release"
+		optimize "speed"
+
+	filter "configurations:Dist"
+		runtime "Release"
+		optimize "speed"
+		symbols "off"
+	filter {}
 end
 
 ----------------------------------------------------------------------
