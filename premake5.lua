@@ -108,6 +108,17 @@ project "NRI-Shared"
 		VULKAN_SDK .. "/include",
 	}
 
+	-- NGX (DLSS) SDK enables the DLSR/DLRR backends in UpscalerInterface.hpp (the
+	-- only TU that compiles them). Gated on the SDK actually being fetched
+	-- (scripts/Lib/NGX.py; Windows/Linux x64 only) so macOS / no-fetch builds still
+	-- compile — the upscaler then stays a no-op stub (NRIDevice::SupportsUpscaler
+	-- reports false). Keep NGX_VERSION in NGX.py matched to CMakeLists.txt.
+	local NGX_INCLUDE = NRI_DIR .. "/../NGX/include"
+	if (os.target() == "windows" or os.target() == "linux") and os.isfile(NGX_INCLUDE .. "/nvsdk_ngx.h") then
+		defines { "NRI_ENABLE_NGX_SDK=1" }
+		externalincludedirs { NGX_INCLUDE }
+	end
+
 ----------------------------------------------------------------------
 -- NRI-VK: Vulkan backend
 -- NOTE: ImplVK.cpp is a single translation unit that #includes all .hpp files
