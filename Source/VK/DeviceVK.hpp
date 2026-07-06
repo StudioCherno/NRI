@@ -1851,7 +1851,6 @@ Result DeviceVK::ResolveDispatchTable(const Vector<const char*>& desiredDeviceEx
     GET_DEVICE_CORE_FUNC(CmdFillBuffer);
     GET_DEVICE_CORE_FUNC(CmdBeginRendering);
     GET_DEVICE_CORE_FUNC(CmdEndRendering);
-    GET_DEVICE_CORE_FUNC(CmdPushDescriptorSet);
     GET_DEVICE_CORE_FUNC(EndCommandBuffer);
 
     GET_DEVICE_OPTIONAL_CORE_FUNC(GetDeviceBufferMemoryRequirements);
@@ -1859,6 +1858,12 @@ Result DeviceVK::ResolveDispatchTable(const Vector<const char*>& desiredDeviceEx
     GET_DEVICE_OPTIONAL_CORE_FUNC(CmdBindIndexBuffer2);
     GET_DEVICE_OPTIONAL_CORE_FUNC(CmdBindDescriptorSets2);
     GET_DEVICE_OPTIONAL_CORE_FUNC(CmdPushConstants2);
+
+    // Core in 1.4, otherwise needs VK_KHR_push_descriptor. OPTIONAL (not GET_DEVICE_CORE_FUNC)
+    // because a driver without the extension should leave this null, not fail device creation
+    // over a feature nothing in Hazel actually uses yet.
+    if (m_MinorVersion >= 4 || IsExtensionSupported(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME, desiredDeviceExts))
+        GET_DEVICE_OPTIONAL_CORE_FUNC(CmdPushDescriptorSet);
 
     if (IsExtensionSupported(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME, desiredDeviceExts))
         GET_DEVICE_FUNC(CmdSetFragmentShadingRateKHR);
