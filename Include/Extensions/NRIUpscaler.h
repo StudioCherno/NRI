@@ -87,6 +87,7 @@ NriStruct(DenoiserGuides) {                             // For DLRR
     NriOptional Nri(UpscalerResource) exposure;         // .x - 1x1 exposure
     NriOptional Nri(UpscalerResource) reactive;         // .x - bias towards "input"
     NriOptional Nri(UpscalerResource) sss;              // .x - subsurface scattering, computed as "Luminance(colorAfterSSS - colorBeforeSSS)"
+    NriOptional Nri(UpscalerResource) disocclusion;     // .x - DLRR disocclusion threshold hint (0 normally; a large value rejects history)
 };
 
 // Settings
@@ -106,6 +107,7 @@ NriStruct(FSRSettings) {
 NriStruct(DLRRSettings) {
     float worldToViewMatrix[16];                        // {Xx, Yx, Zx, 0, Xy, Yy, Zy, 0, Xz, Yz, Zz, 0, Tx, Ty, Tz, 1}, where {X, Y, Z} - axises, T - translation
     float viewToClipMatrix[16];                         // {-, -, -, 0, -, -, -, 0, -, -, -, A, -, -, -, B}, where {A; B} = {0; 1} for ortho or {-1/+1; 0} for perspective projections
+    float frameTime;                                    // the time elapsed since the last frame (ms)
 };
 
 NriStruct(DispatchUpscaleDesc) {
@@ -145,7 +147,7 @@ NriStruct(UpscalerInterface) {
     // Command buffer
     // {
         // Dispatch (changes descriptor pool, pipeline layout and pipeline, barriers are externally controlled)
-        void        (NRI_CALL *CmdDispatchUpscale)      (NriRef(CommandBuffer) commandBuffer, NriRef(Upscaler) upscaler, const NriRef(DispatchUpscaleDesc) dispatchUpscaleDesc);
+        Nri(Result) (NRI_CALL *CmdDispatchUpscale)      (NriRef(CommandBuffer) commandBuffer, NriRef(Upscaler) upscaler, const NriRef(DispatchUpscaleDesc) dispatchUpscaleDesc);
     // }
 };
 

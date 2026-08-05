@@ -25,7 +25,7 @@ struct UpscalerImpl final : public DebugNameBase {
 
     Result Create(const UpscalerDesc& desc);
     void GetUpscalerProps(UpscalerProps& upscalerProps) const;
-    void CmdDispatchUpscale(CommandBuffer& commandBuffer, const DispatchUpscaleDesc& dispatchUpscaleDesc);
+    Result CmdDispatchUpscale(CommandBuffer& commandBuffer, const DispatchUpscaleDesc& dispatchUpscaleDesc);
 
 private:
     Device& m_Device;

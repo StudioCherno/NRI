@@ -415,6 +415,35 @@ static inline int32_t NgxDecrRef(void* deviceNative) {
 static void NVSDK_CONV NgxLogCallback(const char*, NVSDK_NGX_Logging_Level, NVSDK_NGX_Feature) {
 }
 
+static inline Result NgxConvertError(NVSDK_NGX_Result code) {
+    if (NVSDK_NGX_SUCCEED(code))
+        return Result::SUCCESS;
+
+    switch (code) {
+        case NVSDK_NGX_Result_FAIL_InvalidParameter:
+        case NVSDK_NGX_Result_FAIL_ScratchBufferTooSmall:
+        case NVSDK_NGX_Result_FAIL_RWFlagMissing:
+        case NVSDK_NGX_Result_FAIL_MissingInput:
+            return Result::INVALID_ARGUMENT;
+
+        case NVSDK_NGX_Result_FAIL_FeatureNotSupported:
+        case NVSDK_NGX_Result_FAIL_UnsupportedInputFormat:
+        case NVSDK_NGX_Result_FAIL_UnsupportedFormat:
+        case NVSDK_NGX_Result_FAIL_UnsupportedParameter:
+        case NVSDK_NGX_Result_FAIL_NotImplemented:
+            return Result::UNSUPPORTED;
+
+        case NVSDK_NGX_Result_FAIL_OutOfDate:
+            return Result::INVALID_SDK;
+
+        case NVSDK_NGX_Result_FAIL_OutOfGPUMemory:
+            return Result::OUT_OF_MEMORY;
+
+        default:
+            return Result::FAILURE;
+    }
+}
+
 #    if NRI_ENABLE_VK_SUPPORT
 
 static inline NVSDK_NGX_Resource_VK NgxGetResource(const CoreInterface& NRI, const UpscalerResource& resource, uint64_t resourceNative, bool isStorage = false) {
@@ -1203,7 +1232,7 @@ void UpscalerImpl::GetUpscalerProps(UpscalerProps& upscalerProps) const {
         upscalerProps.renderResolutionMin = upscalerProps.renderResolution; // no DRS support because of DLSS
 }
 
-void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const DispatchUpscaleDesc& dispatchUpscaleDesc) {
+Result UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const DispatchUpscaleDesc& dispatchUpscaleDesc) {
     const UpscalerResource& output = dispatchUpscaleDesc.output;
     const UpscalerResource& input = dispatchUpscaleDesc.input;
 
@@ -1229,12 +1258,14 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
             const TextureDesc& inputDesc = m_iCore.GetTextureDesc(*input.texture);
 
             NIS::Constants constants = {};
-            NIS::UpdateConstants(constants, dispatchUpscaleDesc.settings.nis.sharpness,
+            const bool constantsValid = NIS::UpdateConstants(constants, dispatchUpscaleDesc.settings.nis.sharpness,
                 dispatchUpscaleDesc.currentResolution.w, dispatchUpscaleDesc.currentResolution.h, // render resolution
                 inputDesc.width, inputDesc.height,                                                // input dims
                 m_Desc.upscaleResolution.w, m_Desc.upscaleResolution.h,                           // output resolution
                 m_Desc.upscaleResolution.w, m_Desc.upscaleResolution.h,                           // output dims
                 (m_Desc.flags & UpscalerBits::HDR) ? NIS::HDRMode::Linear : NIS::HDRMode::None);
+            if (!constantsValid)
+                return Result::INVALID_ARGUMENT;
 
             SetRootConstantsDesc rootConstants = {0, &constants, sizeof(constants)};
             m_iCore.CmdSetRootConstants(commandBuffer, rootConstants);
@@ -1261,6 +1292,8 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
         // Update descriptor set for the next time
         m.nis->descriptorSetIndex++;
         m.nis->descriptorSetIndex %= NIS_DESCRIPTOR_SET_NUM;
+
+        return Result::SUCCESS;
     }
 #endif
 
@@ -1292,7 +1325,8 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
         dispatchDesc.flags = (m_Desc.flags & UpscalerBits::SRGB) ? FFX_UPSCALE_FLAG_NON_LINEAR_COLOR_SRGB : 0;
 
         ffxReturnCode_t result = m.ffx->Dispatch(&m.ffx->context, &dispatchDesc.header);
-        NRI_CHECK(result == FFX_API_RETURN_OK, "ffxDispatch() failed!");
+
+        return FfxConvertError(result);
     }
 #endif
 
@@ -1317,7 +1351,8 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
         ID3D12GraphicsCommandList* commandList = (ID3D12GraphicsCommandList*)m_iCore.GetCommandBufferNativeObject(&commandBuffer);
 
         xess_result_t result = xessD3D12Execute(m.xess->context, commandList, &executeParams);
-        NRI_CHECK(result == XESS_RESULT_SUCCESS, "xessD3D12Execute() failed!");
+
+        return XessConvertError(result);
     }
 #endif
 
@@ -1406,7 +1441,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
         }
 #    endif
 
-        NRI_CHECK(result == NVSDK_NGX_Result_Success, "DLSR evaluation failed!");
+        return NgxConvertError(result);
     }
 
     if (m_Desc.type == UpscalerType::DLRR) {
@@ -1425,6 +1460,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
         uint64_t specularMvOrHitTNative = m_iCore.GetTextureNativeObject(guides.specularMvOrHitT.texture);
         uint64_t exposureNative = m_iCore.GetTextureNativeObject(guides.exposure.texture);
         uint64_t reactiveNative = m_iCore.GetTextureNativeObject(guides.reactive.texture);
+        uint64_t disocclusionNative = m_iCore.GetTextureNativeObject(guides.disocclusion.texture);
         uint64_t sssNative = m_iCore.GetTextureNativeObject(guides.sss.texture);
 
         void* commandBufferNative = m_iCore.GetCommandBufferNativeObject(&commandBuffer);
@@ -1443,6 +1479,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
             rrEvalParams.pInSpecularAlbedo = (ID3D11Resource*)specularAlbedoNative;
             rrEvalParams.pInExposureTexture = (ID3D11Resource*)exposureNative;
             rrEvalParams.pInBiasCurrentColorMask = (ID3D11Resource*)reactiveNative;
+            rrEvalParams.pInDisocclusionMask = (ID3D11Resource*)disocclusionNative;
             rrEvalParams.pInScreenSpaceSubsurfaceScatteringGuide = (ID3D11Resource*)sssNative;
             rrEvalParams.InJitterOffsetX = dispatchUpscaleDesc.cameraJitter.x;
             rrEvalParams.InJitterOffsetY = dispatchUpscaleDesc.cameraJitter.y;
@@ -1450,6 +1487,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
             rrEvalParams.InReset = (dispatchUpscaleDesc.flags & DispatchUpscaleBits::RESET_HISTORY) ? true : false;
             rrEvalParams.InMVScaleX = dispatchUpscaleDesc.mvScale.x;
             rrEvalParams.InMVScaleY = dispatchUpscaleDesc.mvScale.y;
+            rrEvalParams.InFrameTimeDeltaInMsec = dispatchUpscaleDesc.settings.dlrr.frameTime;
 
             if (dispatchUpscaleDesc.flags & DispatchUpscaleBits::USE_SPECULAR_MOTION)
                 rrEvalParams.pInMotionVectorsReflections = (ID3D11Resource*)specularMvOrHitTNative;
@@ -1475,6 +1513,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
             rrEvalParams.pInSpecularAlbedo = (ID3D12Resource*)specularAlbedoNative;
             rrEvalParams.pInExposureTexture = (ID3D12Resource*)exposureNative;
             rrEvalParams.pInBiasCurrentColorMask = (ID3D12Resource*)reactiveNative;
+            rrEvalParams.pInDisocclusionMask = (ID3D12Resource*)disocclusionNative;
             rrEvalParams.pInScreenSpaceSubsurfaceScatteringGuide = (ID3D12Resource*)sssNative;
             rrEvalParams.InJitterOffsetX = dispatchUpscaleDesc.cameraJitter.x;
             rrEvalParams.InJitterOffsetY = dispatchUpscaleDesc.cameraJitter.y;
@@ -1482,6 +1521,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
             rrEvalParams.InReset = (dispatchUpscaleDesc.flags & DispatchUpscaleBits::RESET_HISTORY) ? true : false;
             rrEvalParams.InMVScaleX = dispatchUpscaleDesc.mvScale.x;
             rrEvalParams.InMVScaleY = dispatchUpscaleDesc.mvScale.y;
+            rrEvalParams.InFrameTimeDeltaInMsec = dispatchUpscaleDesc.settings.dlrr.frameTime;
 
             if (dispatchUpscaleDesc.flags & DispatchUpscaleBits::USE_SPECULAR_MOTION)
                 rrEvalParams.pInMotionVectorsReflections = (ID3D12Resource*)specularMvOrHitTNative;
@@ -1507,6 +1547,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
             NVSDK_NGX_Resource_VK specularMvOrHitTVk = NgxGetResource(m_iCore, guides.specularMvOrHitT, specularMvOrHitTNative);
             NVSDK_NGX_Resource_VK exposureVk = NgxGetResource(m_iCore, guides.exposure, exposureNative);
             NVSDK_NGX_Resource_VK reactiveVk = NgxGetResource(m_iCore, guides.reactive, reactiveNative);
+            NVSDK_NGX_Resource_VK disocclusionVk = NgxGetResource(m_iCore, guides.disocclusion, disocclusionNative);
             NVSDK_NGX_Resource_VK sssVk = NgxGetResource(m_iCore, guides.sss, sssNative);
 
             NVSDK_NGX_VK_DLSSD_Eval_Params rrEvalParams = {};
@@ -1519,6 +1560,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
             rrEvalParams.pInSpecularAlbedo = &specularAlbedoVk;
             rrEvalParams.pInExposureTexture = guides.exposure.texture ? &exposureVk : nullptr;
             rrEvalParams.pInBiasCurrentColorMask = guides.reactive.texture ? &reactiveVk : nullptr;
+            rrEvalParams.pInDisocclusionMask = guides.disocclusion.texture ? &disocclusionVk : nullptr;
             rrEvalParams.pInScreenSpaceSubsurfaceScatteringGuide = guides.sss.texture ? &sssVk : nullptr;
             rrEvalParams.InJitterOffsetX = dispatchUpscaleDesc.cameraJitter.x;
             rrEvalParams.InJitterOffsetY = dispatchUpscaleDesc.cameraJitter.y;
@@ -1526,6 +1568,7 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
             rrEvalParams.InReset = (dispatchUpscaleDesc.flags & DispatchUpscaleBits::RESET_HISTORY) ? true : false;
             rrEvalParams.InMVScaleX = dispatchUpscaleDesc.mvScale.x;
             rrEvalParams.InMVScaleY = dispatchUpscaleDesc.mvScale.y;
+            rrEvalParams.InFrameTimeDeltaInMsec = dispatchUpscaleDesc.settings.dlrr.frameTime;
 
             if (dispatchUpscaleDesc.flags & DispatchUpscaleBits::USE_SPECULAR_MOTION)
                 rrEvalParams.pInMotionVectorsReflections = &specularMvOrHitTVk;
@@ -1539,7 +1582,9 @@ void UpscalerImpl::CmdDispatchUpscale(CommandBuffer& commandBuffer, const Dispat
         }
 #    endif
 
-        NRI_CHECK(result == NVSDK_NGX_Result_Success, "DLRR evaluation failed!");
+        return NgxConvertError(result);
     }
 #endif
+
+    return Result::UNSUPPORTED;
 }

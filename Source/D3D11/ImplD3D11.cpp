@@ -1166,10 +1166,10 @@ static void NRI_CALL GetUpscalerProps(const Upscaler& upscaler, UpscalerProps& u
     return upscalerImpl.GetUpscalerProps(upscalerProps);
 }
 
-static void NRI_CALL CmdDispatchUpscale(CommandBuffer& commandBuffer, Upscaler& upscaler, const DispatchUpscaleDesc& dispatchUpscalerDesc) {
+static Result NRI_CALL CmdDispatchUpscale(CommandBuffer& commandBuffer, Upscaler& upscaler, const DispatchUpscaleDesc& dispatchUpscalerDesc) {
     UpscalerImpl& upscalerImpl = (UpscalerImpl&)upscaler;
 
-    upscalerImpl.CmdDispatchUpscale(commandBuffer, dispatchUpscalerDesc);
+    return upscalerImpl.CmdDispatchUpscale(commandBuffer, dispatchUpscalerDesc);
 }
 
 Result DeviceD3D11::FillFunctionTable(UpscalerInterface& table) const {

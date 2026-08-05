@@ -1410,11 +1410,11 @@ static void NRI_CALL GetUpscalerProps(const Upscaler& upscaler, UpscalerProps& u
     return upscalerImpl->GetUpscalerProps(upscalerProps);
 }
 
-static void NRI_CALL CmdDispatchUpscale(CommandBuffer& commandBuffer, Upscaler& upscaler, const DispatchUpscaleDesc& dispatchUpscaleDesc) {
+static Result NRI_CALL CmdDispatchUpscale(CommandBuffer& commandBuffer, Upscaler& upscaler, const DispatchUpscaleDesc& dispatchUpscaleDesc) {
     UpscalerVal& upscalerVal = (UpscalerVal&)upscaler;
     UpscalerImpl* upscalerImpl = upscalerVal.GetImpl();
 
-    upscalerImpl->CmdDispatchUpscale(commandBuffer, dispatchUpscaleDesc);
+    return upscalerImpl->CmdDispatchUpscale(commandBuffer, dispatchUpscaleDesc);
 }
 
 Result DeviceVal::FillFunctionTable(UpscalerInterface& table) const {

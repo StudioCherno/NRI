@@ -1175,7 +1175,8 @@ static void NRI_CALL GetUpscalerProps(const Upscaler&, UpscalerProps& upscalerPr
     upscalerProps = {1.0f, 0.0f, {1, 1}, {1, 1}, {1, 1}, 1};
 }
 
-static void NRI_CALL CmdDispatchUpscale(CommandBuffer&, Upscaler&, const DispatchUpscaleDesc&) {
+static Result NRI_CALL CmdDispatchUpscale(CommandBuffer&, Upscaler&, const DispatchUpscaleDesc&) {
+    return Result::SUCCESS;
 }
 
 Result DeviceNONE::FillFunctionTable(UpscalerInterface& table) const {
