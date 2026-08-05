@@ -152,3 +152,12 @@ NriStruct(UpscalerInterface) {
 };
 
 NriNamespaceEnd
+
+// Optional process-wide sink for NGX log output (DLSS/DLRR feature diagnostics).
+// Install BEFORE the first upscaler is created — the logging configuration is
+// captured at NGX initialization. "level" and "feature" forward the raw
+// NVSDK_NGX_Logging_Level / NVSDK_NGX_Feature values; messages arrive on NGX's
+// calling thread. Passing NULL restores the silent default. Global (non-namespaced)
+// like the other nri* free functions.
+typedef void(NRI_CALL* NriNgxLogSink)(const char* message, uint32_t level, uint32_t feature, void* userArg);
+NRI_API void NRI_CALL nriSetNgxLogSink(NriNgxLogSink sink, void* userArg);

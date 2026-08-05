@@ -380,7 +380,14 @@ struct NgxGlobals {
     std::array<RefCounter, 32> refCounters; // awful API borns awful solutions...
     uint32_t refCounterNum = 0;
     Lock lock = {}; // methods in NGX library are NOT thread safe (see the comment in "nvsdk_ngx.h")
+    NriNgxLogSink logSink = nullptr; // install before the first upscaler creation; NGX invokes it from its own threads
+    void* logSinkUserArg = nullptr;
 } g_ngx;
+
+NRI_API void NRI_CALL nriSetNgxLogSink(NriNgxLogSink sink, void* userArg) {
+    g_ngx.logSink = sink;
+    g_ngx.logSinkUserArg = userArg;
+}
 
 static inline int32_t NgxIncrRef(void* deviceNative) {
     uint32_t i = 0;
@@ -412,7 +419,10 @@ static inline int32_t NgxDecrRef(void* deviceNative) {
     return g_ngx.refCounters[i].refCounter;
 }
 
-static void NVSDK_CONV NgxLogCallback(const char*, NVSDK_NGX_Logging_Level, NVSDK_NGX_Feature) {
+static void NVSDK_CONV NgxLogCallback(const char* message, NVSDK_NGX_Logging_Level level, NVSDK_NGX_Feature feature) {
+    NriNgxLogSink sink = g_ngx.logSink;
+    if (sink && message)
+        sink(message, (uint32_t)level, (uint32_t)feature, g_ngx.logSinkUserArg);
 }
 
 static inline Result NgxConvertError(NVSDK_NGX_Result code) {
@@ -459,6 +469,12 @@ static inline NVSDK_NGX_Resource_VK NgxGetResource(const CoreInterface& NRI, con
 }
 
 #    endif
+#else
+
+// Keep the public log-sink entry point linkable when NRI is built without the NGX SDK.
+NRI_API void NRI_CALL nriSetNgxLogSink(NriNgxLogSink, void*) {
+}
+
 #endif
 
 //=====================================================================================================================================
@@ -1002,7 +1018,9 @@ Result UpscalerImpl::Create(const UpscalerDesc& upscalerDesc) {
 
             NVSDK_NGX_FeatureCommonInfo featureCommonInfo = {};
             featureCommonInfo.LoggingInfo.LoggingCallback = NgxLogCallback;
-            featureCommonInfo.LoggingInfo.MinimumLoggingLevel = NVSDK_NGX_LOGGING_LEVEL_OFF; // TODO: NGX spams to "stdout" if not OFF
+            // With no installed sink stay OFF (NGX spams "stdout" otherwise); an installed
+            // sink receives ON-level messages and owns its own filtering/rate limiting.
+            featureCommonInfo.LoggingInfo.MinimumLoggingLevel = g_ngx.logSink ? NVSDK_NGX_LOGGING_LEVEL_ON : NVSDK_NGX_LOGGING_LEVEL_OFF;
             featureCommonInfo.LoggingInfo.DisableOtherLoggingSinks = true;
 
 #    if NRI_ENABLE_D3D11_SUPPORT
