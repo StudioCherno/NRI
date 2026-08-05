@@ -87,6 +87,8 @@ Result SwapChainVK::Create(const SwapChainDesc& swapChainDesc) {
     bool allowLowLatency = m_Device.GetDesc().features.lowLatency && (swapChainDesc.flags & SwapChainBits::ALLOW_LOW_LATENCY);
 
     uint32_t textureNum = swapChainDesc.textureNum;
+    Dim_t width = swapChainDesc.width;
+    Dim_t height = swapChainDesc.height;
     {
         VkBool32 supported = VK_FALSE;
         VkResult vkResult = vk.GetPhysicalDeviceSurfaceSupportKHR(m_Device, familyIndex, m_Surface, &supported);
@@ -108,13 +110,27 @@ Result SwapChainVK::Create(const SwapChainDesc& swapChainDesc) {
         NRI_RETURN_ON_BAD_VKRESULT(&m_Device, vkResult, "vkGetPhysicalDeviceSurfaceCapabilities2KHR");
 
         const VkSurfaceCapabilitiesKHR& surfaceCaps = caps2.surfaceCapabilities;
-        bool isWidthValid = swapChainDesc.width >= surfaceCaps.minImageExtent.width && swapChainDesc.width <= surfaceCaps.maxImageExtent.width;
-        NRI_RETURN_ON_FAILURE(&m_Device, isWidthValid, Result::INVALID_ARGUMENT, "swapChainDesc.width is out of [%u, %u] range", surfaceCaps.minImageExtent.width,
-            surfaceCaps.maxImageExtent.width);
 
-        bool isHeightValid = swapChainDesc.height >= surfaceCaps.minImageExtent.height && swapChainDesc.height <= surfaceCaps.maxImageExtent.height;
-        NRI_RETURN_ON_FAILURE(&m_Device, isHeightValid, Result::INVALID_ARGUMENT, "swapChainDesc.height is out of [%u, %u] range", surfaceCaps.minImageExtent.height,
-            surfaceCaps.maxImageExtent.height);
+        // X11 pins min/max/currentExtent to the live window size, so a requested extent that's stale
+        // (WM resized the window since the caller sampled it) would abort here. Snap to currentExtent
+        // when the surface gives one, otherwise clamp into range. Same idea as the textureNum clamp below.
+        constexpr uint32_t UNDEFINED_EXTENT = 0xFFFFFFFF; // "swapchain drives the surface size" (see spec)
+        if (surfaceCaps.currentExtent.width != UNDEFINED_EXTENT && surfaceCaps.currentExtent.height != UNDEFINED_EXTENT) {
+            width = static_cast<Dim_t>(surfaceCaps.currentExtent.width);
+            height = static_cast<Dim_t>(surfaceCaps.currentExtent.height);
+        } else {
+            if (width < surfaceCaps.minImageExtent.width)
+                width = static_cast<Dim_t>(surfaceCaps.minImageExtent.width);
+            if (width > surfaceCaps.maxImageExtent.width)
+                width = static_cast<Dim_t>(surfaceCaps.maxImageExtent.width);
+            if (height < surfaceCaps.minImageExtent.height)
+                height = static_cast<Dim_t>(surfaceCaps.minImageExtent.height);
+            if (height > surfaceCaps.maxImageExtent.height)
+                height = static_cast<Dim_t>(surfaceCaps.maxImageExtent.height);
+        }
+
+        if (width != swapChainDesc.width || height != swapChainDesc.height)
+            NRI_REPORT_WARNING(&m_Device, "'swapChainDesc' extent %ux%u clamped to %ux%u", swapChainDesc.width, swapChainDesc.height, width, height);
 
         // Silently clamp "textureNum" to the supported range
         if (textureNum < surfaceCaps.minImageCount)
@@ -316,7 +332,7 @@ Result SwapChainVK::Create(const SwapChainDesc& swapChainDesc) {
         swapchainInfo.minImageCount = textureNum;
         swapchainInfo.imageFormat = surfaceFormat.surfaceFormat.format;
         swapchainInfo.imageColorSpace = surfaceFormat.surfaceFormat.colorSpace;
-        swapchainInfo.imageExtent = {swapChainDesc.width, swapChainDesc.height};
+        swapchainInfo.imageExtent = {width, height};
         swapchainInfo.imageArrayLayers = 1;
         swapchainInfo.imageUsage = swapchainImageUsageFlags;
         swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -392,8 +408,8 @@ Result SwapChainVK::Create(const SwapChainDesc& swapChainDesc) {
             desc.vkFormat = surfaceFormat.surfaceFormat.format;
             desc.vkImageType = VK_IMAGE_TYPE_2D;
             desc.vkImageUsageFlags = swapchainImageUsageFlags;
-            desc.width = swapChainDesc.width;
-            desc.height = swapChainDesc.height;
+            desc.width = width;
+            desc.height = height;
             desc.depth = 1;
             desc.mipNum = 1;
             desc.layerNum = 1;
