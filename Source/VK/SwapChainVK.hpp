@@ -466,6 +466,16 @@ NRI_INLINE Result SwapChainVK::AcquireNextTexture(FenceVK& acquireSemaphore, uin
     VkResult vkResult = vk.AcquireNextImage2KHR(m_Device, &acquireInfo, &m_TextureIndex);
     NRI_RETURN_ON_BAD_VKRESULT(&m_Device, vkResult, "AcquireNextImage2KHR");
 
+    // The macro above only rejects negative results, so a timed-out acquire (VK_TIMEOUT, or
+    // VK_NOT_READY for a zero timeout) would fall through as success. Nothing was acquired in that
+    // case: "m_TextureIndex" is left untouched and "acquireSemaphore" has no signal operation
+    // pending, so a submit waiting on it would block the queue forever. VK_SUBOPTIMAL_KHR is a real
+    // acquire and stays a success.
+    if (vkResult != VK_SUCCESS && vkResult != VK_SUBOPTIMAL_KHR) {
+        NRI_REPORT_WARNING(&m_Device, "AcquireNextImage2KHR did not acquire an image, result = %d", (int32_t)vkResult);
+        return Result::FAILURE;
+    }
+
     textureIndex = m_TextureIndex;
 
     return Result::SUCCESS;
