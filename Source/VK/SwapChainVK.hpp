@@ -455,10 +455,10 @@ NRI_INLINE Texture* const* SwapChainVK::GetTextures(uint32_t& textureNum) const 
 NRI_INLINE Result SwapChainVK::AcquireNextTexture(FenceVK& acquireSemaphore, uint32_t& textureIndex) {
     ExclusiveScope lock(m_Queue->GetLock());
 
-    // Acquire next image (signal)
+    // Acquire next image (signal).
     VkAcquireNextImageInfoKHR acquireInfo = {VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR};
     acquireInfo.swapchain = m_Handle;
-    acquireInfo.timeout = MsToUs(TIMEOUT_PRESENT);
+    acquireInfo.timeout = m_AcquirePolling ? 0 : MsToUs(TIMEOUT_PRESENT);
     acquireInfo.semaphore = acquireSemaphore;
     acquireInfo.deviceMask = NODE_MASK;
 
@@ -472,9 +472,13 @@ NRI_INLINE Result SwapChainVK::AcquireNextTexture(FenceVK& acquireSemaphore, uin
     // pending, so a submit waiting on it would block the queue forever. VK_SUBOPTIMAL_KHR is a real
     // acquire and stays a success.
     if (vkResult != VK_SUCCESS && vkResult != VK_SUBOPTIMAL_KHR) {
-        NRI_REPORT_WARNING(&m_Device, "AcquireNextImage2KHR did not acquire an image, result = %d", (int32_t)vkResult);
+        // Only on the transition into polling, or the zero-timeout retries spam one line per frame.
+        if (!m_AcquirePolling)
+            NRI_REPORT_WARNING(&m_Device, "AcquireNextImage2KHR did not acquire an image, result = %d", (int32_t)vkResult);
+        m_AcquirePolling = true;
         return Result::FAILURE;
     }
+    m_AcquirePolling = false;
 
     textureIndex = m_TextureIndex;
 

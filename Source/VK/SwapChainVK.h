@@ -61,6 +61,9 @@ private:
     uint64_t m_PresentId = 0;
     uint32_t m_TextureIndex = 0;
     SwapChainBits m_Flags = SwapChainBits::NONE;
+
+    // True after an acquire timed out; see AcquireNextTexture.
+    bool m_AcquirePolling = false;
 };
 
 } // namespace nri
