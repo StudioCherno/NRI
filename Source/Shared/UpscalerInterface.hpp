@@ -382,11 +382,22 @@ struct NgxGlobals {
     Lock lock = {}; // methods in NGX library are NOT thread safe (see the comment in "nvsdk_ngx.h")
     NriNgxLogSink logSink = nullptr; // install before the first upscaler creation; NGX invokes it from its own threads
     void* logSinkUserArg = nullptr;
+    const char* projectId = nullptr; // when set, NGX is initialized with a project ID instead of APPLICATION_ID
+    const char* engineVersion = nullptr;
 } g_ngx;
 
 NRI_API void NRI_CALL nriSetNgxLogSink(NriNgxLogSink sink, void* userArg) {
     g_ngx.logSink = sink;
     g_ngx.logSinkUserArg = userArg;
+}
+
+NRI_API void NRI_CALL nriSetNgxProjectId(const char* projectId, const char* engineVersion) {
+    g_ngx.projectId = projectId;
+    g_ngx.engineVersion = engineVersion;
+}
+
+static inline const char* NgxEngineVersion() {
+    return g_ngx.engineVersion ? g_ngx.engineVersion : "";
 }
 
 static inline int32_t NgxIncrRef(void* deviceNative) {
@@ -471,8 +482,11 @@ static inline NVSDK_NGX_Resource_VK NgxGetResource(const CoreInterface& NRI, con
 #    endif
 #else
 
-// Keep the public log-sink entry point linkable when NRI is built without the NGX SDK.
+// Keep the public NGX entry points linkable when NRI is built without the NGX SDK.
 NRI_API void NRI_CALL nriSetNgxLogSink(NriNgxLogSink, void*) {
+}
+
+NRI_API void NRI_CALL nriSetNgxProjectId(const char*, const char*) {
 }
 
 #endif
@@ -1025,7 +1039,10 @@ Result UpscalerImpl::Create(const UpscalerDesc& upscalerDesc) {
 
 #    if NRI_ENABLE_D3D11_SUPPORT
             if (deviceDesc.graphicsAPI == GraphicsAPI::D3D11) {
-                ngxResult = NVSDK_NGX_D3D11_Init(APPLICATION_ID, path, (ID3D11Device*)deviceNative, &featureCommonInfo);
+                if (g_ngx.projectId)
+                    ngxResult = NVSDK_NGX_D3D11_Init_with_ProjectID(g_ngx.projectId, NVSDK_NGX_ENGINE_TYPE_CUSTOM, NgxEngineVersion(), path, (ID3D11Device*)deviceNative, &featureCommonInfo);
+                else
+                    ngxResult = NVSDK_NGX_D3D11_Init(APPLICATION_ID, path, (ID3D11Device*)deviceNative, &featureCommonInfo);
                 if (ngxResult == NVSDK_NGX_Result_Success) {
                     NgxIncrRef(deviceNative);
                     ngxResult = NVSDK_NGX_D3D11_GetCapabilityParameters(&m.ngx->params);
@@ -1035,7 +1052,10 @@ Result UpscalerImpl::Create(const UpscalerDesc& upscalerDesc) {
 
 #    if NRI_ENABLE_D3D12_SUPPORT
             if (deviceDesc.graphicsAPI == GraphicsAPI::D3D12) {
-                ngxResult = NVSDK_NGX_D3D12_Init(APPLICATION_ID, path, (ID3D12Device*)deviceNative, &featureCommonInfo);
+                if (g_ngx.projectId)
+                    ngxResult = NVSDK_NGX_D3D12_Init_with_ProjectID(g_ngx.projectId, NVSDK_NGX_ENGINE_TYPE_CUSTOM, NgxEngineVersion(), path, (ID3D12Device*)deviceNative, &featureCommonInfo);
+                else
+                    ngxResult = NVSDK_NGX_D3D12_Init(APPLICATION_ID, path, (ID3D12Device*)deviceNative, &featureCommonInfo);
                 if (ngxResult == NVSDK_NGX_Result_Success) {
                     NgxIncrRef(deviceNative);
                     ngxResult = NVSDK_NGX_D3D12_GetCapabilityParameters(&m.ngx->params);
@@ -1054,7 +1074,10 @@ Result UpscalerImpl::Create(const UpscalerDesc& upscalerDesc) {
                 PFN_vkGetInstanceProcAddr vkGipa = (PFN_vkGetInstanceProcAddr)iWrapperVK.GetInstanceProcAddrVK(m_Device);
                 PFN_vkGetDeviceProcAddr vkGdpa = (PFN_vkGetDeviceProcAddr)iWrapperVK.GetDeviceProcAddrVK(m_Device);
 
-                ngxResult = NVSDK_NGX_VULKAN_Init(APPLICATION_ID, path, vkInstance, vkPhysicalDevice, (VkDevice)deviceNative, vkGipa, vkGdpa, &featureCommonInfo);
+                if (g_ngx.projectId)
+                    ngxResult = NVSDK_NGX_VULKAN_Init_with_ProjectID(g_ngx.projectId, NVSDK_NGX_ENGINE_TYPE_CUSTOM, NgxEngineVersion(), path, vkInstance, vkPhysicalDevice, (VkDevice)deviceNative, vkGipa, vkGdpa, &featureCommonInfo);
+                else
+                    ngxResult = NVSDK_NGX_VULKAN_Init(APPLICATION_ID, path, vkInstance, vkPhysicalDevice, (VkDevice)deviceNative, vkGipa, vkGdpa, &featureCommonInfo);
                 if (ngxResult == NVSDK_NGX_Result_Success) {
                     NgxIncrRef(deviceNative);
                     ngxResult = NVSDK_NGX_VULKAN_GetCapabilityParameters(&m.ngx->params);

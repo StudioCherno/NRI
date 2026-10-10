@@ -161,3 +161,11 @@ NriNamespaceEnd
 // like the other nri* free functions.
 typedef void(NRI_CALL* NriNgxLogSink)(const char* message, uint32_t level, uint32_t feature, void* userArg);
 NRI_API void NRI_CALL nriSetNgxLogSink(NriNgxLogSink sink, void* userArg);
+
+// Optional process-wide NGX application identity. Without an NVIDIA-issued application ID, NVIDIA
+// requires NGX to be initialized with a GUID-like project ID, the CUSTOM engine type and the
+// engine's version (DLSS Programming Guide, "Project ID"). Once set, every NGX initialization uses
+// NVSDK_NGX_*_Init_with_ProjectID; unset, NRI keeps its placeholder application ID. Install BEFORE
+// the first upscaler is created. Both strings are kept by pointer and must stay valid while
+// upscalers exist (string literals are the intended use).
+NRI_API void NRI_CALL nriSetNgxProjectId(const char* projectId, const char* engineVersion);
