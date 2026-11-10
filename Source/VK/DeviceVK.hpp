@@ -292,7 +292,8 @@ void DeviceVK::ProcessDeviceExtensions(Vector<const char*>& desiredDeviceExts, b
     APPEND_EXT(m_MinorVersion < 4, VK_KHR_LINE_RASTERIZATION_EXTENSION_NAME);
     APPEND_EXT(m_MinorVersion < 4, VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
     APPEND_EXT(m_MinorVersion < 4, VK_KHR_MAINTENANCE_6_EXTENSION_NAME);
-    APPEND_EXT(m_MinorVersion < 4, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+    // Enabled even on 1.4, where it's core, so the KHR entry point below is legal to call.
+    APPEND_EXT(true, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
     APPEND_EXT(m_MinorVersion < 4, VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME);
     APPEND_EXT(m_MinorVersion < 4, VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME);
 
@@ -1860,9 +1861,15 @@ Result DeviceVK::ResolveDispatchTable(const Vector<const char*>& desiredDeviceEx
     GET_DEVICE_OPTIONAL_CORE_FUNC(CmdPushConstants2);
 
     // Core in 1.4, otherwise needs VK_KHR_push_descriptor. OPTIONAL (not GET_DEVICE_CORE_FUNC)
-    // because a driver without the extension should leave this null, not fail device creation
-    // over a feature nothing in Hazel actually uses yet.
-    if (m_MinorVersion >= 4 || IsExtensionSupported(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME, desiredDeviceExts))
+    // because a driver without the extension should leave this null, not fail device creation;
+    // RetGui's pipeline layout checks rootDescriptorMaxNum instead.
+    //
+    // The KHR name is loaded first when the extension is on: a validation layer older than 1.4
+    // doesn't intercept the core name, so GetDeviceProcAddr returns the driver's function, which
+    // then receives the layer's wrapped handles and crashes.
+    if (IsExtensionSupported(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME, desiredDeviceExts))
+        m_VK.CmdPushDescriptorSet = (PFN_vkCmdPushDescriptorSet)m_VK.GetDeviceProcAddr(m_Device, "vkCmdPushDescriptorSetKHR");
+    else if (m_MinorVersion >= 4)
         GET_DEVICE_OPTIONAL_CORE_FUNC(CmdPushDescriptorSet);
 
     if (IsExtensionSupported(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME, desiredDeviceExts))
